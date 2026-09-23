@@ -35,7 +35,7 @@ def evaluate_checkpoint(
     n_samples: int = 16,
     bars: int = 16,
     prompt_bars: int = 4,
-    gen: GenerationConfig | None = None,
+    gen_overrides: dict | None = None,
     device: str = "auto",
     seed: int = 0,
     save_midi: int = 4,
@@ -44,7 +44,8 @@ def evaluate_checkpoint(
     out_dir.mkdir(parents=True, exist_ok=True)
     dev = resolve_device(device)
     model, cfg, tokenizer, _ = load_checkpoint(checkpoint, dev)
-    gen = dataclasses.replace(gen or cfg.generation, bars=bars)
+    gen: GenerationConfig = dataclasses.replace(cfg.generation, **(gen_overrides or {}),
+                                                bars=bars)
 
     corpus = build_corpus(cfg.data, progress=False)
     splits = split_scores(corpus.scores, cfg.data.val_fraction, cfg.data.test_fraction,
@@ -62,7 +63,7 @@ def evaluate_checkpoint(
         source = reference[i % len(reference)]
         prompt = source.slice_bars(0, prompt_bars) if prompt_bars else None
         result = generate(model, tokenizer, gen, prompt, monophonic=cfg.data.melody_only,
-                          seed=seed + i)
+                          seed=seed + i, steps_per_beat=cfg.data.steps_per_beat)
         continuation = result.score.slice_bars(prompt_bars, prompt_bars + bars)
         generated.append(continuation)
         truth.append(source.slice_bars(prompt_bars, prompt_bars + bars))

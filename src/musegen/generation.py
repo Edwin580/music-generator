@@ -188,6 +188,7 @@ def generate(
     prompt: Score | None = None,
     monophonic: bool = True,
     seed: int | None = None,
+    steps_per_beat: int = 4,
 ) -> GenerationResult:
     """High-level entry point: continue an optional prompt score and return a full Score."""
     device = _device_of(model)
@@ -218,7 +219,6 @@ def generate(
         )
         notes = tokenizer.decode(tokens)
 
-    steps_per_beat = tokenizer.steps_per_bar // (prompt.beats_per_bar if prompt else 4)
     score = Score(sorted(notes), steps_per_beat, tokenizer.steps_per_bar // steps_per_beat,
                   gen.tempo, name="generated", bars=prompt_bars + gen.bars)
     return GenerationResult(score, prompt_bars, key, tokens)

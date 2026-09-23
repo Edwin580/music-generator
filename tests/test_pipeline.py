@@ -28,9 +28,11 @@ def test_train_generate_evaluate(arch, tiny_config, tmp_path):
 
     eval_dir = tmp_path / "eval"
     assert main(["evaluate", "-m", str(run / "best.pt"), "--out-dir", str(eval_dir),
-                 "--num-samples", "2", "--bars", "2", "--prompt-bars", "1"]) == 0
+                 "--num-samples", "2", "--bars", "2", "--prompt-bars", "1", "--key", "auto",
+                 "--top-p", "0.9"]) == 0
     report = json.loads((eval_dir / "report.json").read_text())
     assert report["held_out_likelihood"]["loss"] > 0
+    assert report["generation"]["key"] == "auto" and report["generation"]["top_p"] == 0.9
     assert (eval_dir / "report.md").exists()
 
 

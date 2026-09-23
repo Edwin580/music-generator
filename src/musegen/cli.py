@@ -103,7 +103,7 @@ def cmd_generate(args) -> int:
     for i in range(args.num):
         seed = None if args.seed is None else args.seed + i
         result = generate(model, tokenizer, gen, prompt, monophonic=cfg.data.melody_only,
-                          seed=seed)
+                          seed=seed, steps_per_beat=cfg.data.steps_per_beat)
         path = out if args.num == 1 else Path(f"{stem}_{i:02d}.mid")
         save_score(result.score, path, gen.program)
         key = f" in {result.key}" if result.key else ""
@@ -122,9 +122,11 @@ def cmd_evaluate(args) -> int:
     from .evaluation import evaluate_checkpoint
 
     out_dir = args.out_dir or str(Path(args.checkpoint).parent / "eval")
+    overrides = {k: getattr(args, k) for k in ("temperature", "top_k", "top_p", "key")
+                 if getattr(args, k) is not None}
     report = evaluate_checkpoint(args.checkpoint, out_dir, n_samples=args.num_samples,
                                  bars=args.bars, prompt_bars=args.prompt_bars,
-                                 device=args.device, seed=args.seed)
+                                 gen_overrides=overrides, device=args.device, seed=args.seed)
     print((Path(out_dir) / "report.md").read_text())
     print(f"Figures and samples written to {out_dir}")
     return 0 if report else 1
@@ -212,6 +214,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--num-samples", type=int, default=16)
     p.add_argument("--bars", type=int, default=16)
     p.add_argument("--prompt-bars", type=int, default=4)
+    p.add_argument("--temperature", "-t", type=float)
+    p.add_argument("--top-k", type=int)
+    p.add_argument("--top-p", type=float)
+    p.add_argument("--key", help="'auto' constrains each sample to its prompt's key")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", default="auto")
     p.set_defaults(func=cmd_evaluate)
