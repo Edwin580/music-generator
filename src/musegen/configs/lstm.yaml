@@ -1,0 +1,25 @@
+# LSTM language model over REMI tokens: the notebook's recurrent idea on a better representation.
+name: lstm
+data:
+  midi_dir: data/midi
+  representation: tokens
+  melody_only: true
+  seq_len: 256
+  stride: 128
+  transpose_range: 5
+model:
+  arch: lstm
+  d_model: 512
+  n_layers: 2
+  dropout: 0.3
+train:
+  output_dir: runs/lstm
+  epochs: 40
+  batch_size: 32
+  lr: 1.0e-3
+  warmup_steps: 100
+  patience: 6
+generation:
+  bars: 16
+  temperature: 0.95
+  top_p: 0.95

@@ -1,0 +1,22 @@
+# Tiny, fast configuration used by CI and for checking an installation (runs in seconds on CPU).
+name: smoke
+data:
+  midi_dir: data/synthetic
+  cache_dir: data/cache
+  seq_len: 128
+  stride: 64
+model:
+  arch: transformer
+  d_model: 64
+  n_layers: 2
+  n_heads: 2
+  max_len: 256
+train:
+  output_dir: runs/smoke
+  epochs: 2
+  batch_size: 16
+  warmup_steps: 10
+  max_steps_per_epoch: 20
+  device: cpu
+generation:
+  bars: 8
