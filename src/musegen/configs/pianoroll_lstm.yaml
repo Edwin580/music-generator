@@ -1,0 +1,25 @@
+# The original notebook's model (LSTM over piano-roll frames), with the fixes described in README.
+name: pianoroll_lstm
+data:
+  midi_dir: data/midi
+  representation: pianoroll
+  melody_only: true
+  seq_len: 64          # frames (4 bars of sixteenth notes)
+  stride: 16
+  transpose_range: 5
+model:
+  arch: pianoroll_lstm
+  d_model: 256
+  n_layers: 2
+  dropout: 0.3
+train:
+  output_dir: runs/pianoroll_lstm
+  epochs: 30
+  batch_size: 64
+  lr: 1.0e-3
+  warmup_steps: 100
+  patience: 5
+generation:
+  bars: 16
+  temperature: 1.0
+  max_polyphony: 1
