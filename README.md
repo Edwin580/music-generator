@@ -146,49 +146,57 @@ drag, as in his Tangle library, and the figures below them redraw.
 
 ## Results
 
-These numbers come from a short **CPU-only benchmark on the synthetic corpus**
-(`musegen synth-data --n 256`: 256 procedurally composed 16-bar pieces, split 204/26/26 by file).
-Each model trained for 25 epochs, a few minutes each. The runs had not converged, so treat this
-as a check that the pipeline works and a comparison of the models, not as final quality. On the
-real MIDIWorld set, or with a Colab GPU and more epochs, expect different numbers.
-Reproduce with:
+These numbers come from a short CPU benchmark on the synthetic corpus
+(`musegen synth-data --n 256`: 256 procedurally composed 16 bar pieces, split 204/26/26 by file).
+Each model trained for 25 epochs, a few minutes each. The runs had not converged, so read this
+as a check that the pipeline works and a comparison between the models, not as final quality. On
+real MIDI, or with a GPU and more epochs, expect different numbers. The Transformer in the browser
+demo is the one from this table. Reproduce with:
 
 ```bash
 musegen synth-data --dest data/synth256 --n 256 --seed 7
 musegen train -c transformer --midi-dir data/synth256 --output-dir runs/synth_transformer \
     --set model.d_model=128 model.n_layers=4 model.n_heads=4 data.seq_len=256 data.stride=128 train.epochs=25
+musegen train -c lstm --midi-dir data/synth256 --output-dir runs/synth_lstm \
+    --set model.d_model=256 train.epochs=25
+musegen train -c pianoroll_lstm --midi-dir data/synth256 --output-dir runs/synth_pianoroll \
+    --set train.epochs=25
 musegen evaluate -m runs/synth_transformer/best.pt --num-samples 32 --bars 12 --prompt-bars 4 [--key auto]
 ```
 
-Evaluation takes 32 samples (cycling through the 26 test pieces): each continues 4 bars of a held-out prompt for 12 bars.
+Evaluation takes 32 samples (cycling through the 26 test pieces). Each continues 4 bars of a
+held-out prompt for 12 bars and is compared with the piece's real next 12 bars.
 
 | model | params | held-out likelihood | scale consistency | key clarity | pitch-class OA | interval OA | rhythm (onset) OA |
 |---|---|---|---|---|---|---|---|
-| real continuations | – | – | 1.000 | 0.762 | – | – | – |
-| Transformer | 0.81 M | perplexity **3.01** | 0.793 | 0.614 | 0.93 | 0.72 | 0.97 |
-| Transformer + `--key auto` | | | **1.000** | **0.786** | 0.94 | 0.73 | 0.97 |
-| LSTM (tokens) | 1.09 M | perplexity **2.62** | 0.792 | 0.553 | 0.91 | 0.81 | 0.98 |
-| LSTM (tokens) + `--key auto` | | | **1.000** | 0.705 | 0.90 | 0.81 | 0.98 |
+| real continuations | | | 1.000 | 0.762 | | | |
+| Transformer | 0.81 M | perplexity **3.01** | 0.794 | 0.644 | 0.92 | 0.69 | 0.98 |
+| Transformer + `--key auto` | | | **1.000** | **0.799** | 0.92 | 0.75 | 0.99 |
+| LSTM (tokens) | 1.09 M | perplexity **2.62** | 0.783 | 0.568 | 0.92 | 0.83 | 0.98 |
+| LSTM (tokens) + `--key auto` | | | **1.000** | 0.737 | 0.90 | 0.80 | 0.98 |
 | piano-roll LSTM (notebook model, fixed) | 1.14 M | frame F1 0.67 | 0.841 | 0.708 | 0.90 | 0.80 | 0.76 |
 | piano-roll LSTM + `--key auto` | | | 0.999 | 0.774 | 0.93 | 0.76 | 0.80 |
 
 *OA = overlap area between the generated and real histograms (1.0 = identical distributions).*
 
+These were re-run after fixing a bug in `generate_tokens`: after a prompt, sampling resumed inside
+the prompt's last bar, so a prompt ending in a rest got notes written into it. On these prompts the
+last bar is usually full, so the token models' numbers moved only slightly; the piano-roll model is
+unaffected.
+
 What the numbers show:
 
-- **The token models get rhythm almost exactly right** (onset-position and duration OA of
-  0.97-0.99). The piano-roll model, with no explicit notion of bars or durations, reaches only 0.76-0.81.
-  This is the main reason to prefer the REMI representation.
-- **The key constraint helps.** Without it, about 20% of generated notes fall outside the
-  best-fitting scale. With `--key auto`, every note is in the key of the prompt and tonal clarity
-  rises to or above that of the real music, with no retraining.
-- **All models are still weak at long-range structure.** The real continuations reuse their
-  4-bar motifs (repetition ratio 0.55); generated ones essentially never do (≈0.00). The Transformer
-  also leaps more than the real music (mean interval 5.2 vs 3.3 semitones). More training, longer
-  context and larger models are the obvious next steps; this is the gap the Transformer's
-  attention should eventually close.
-- At this tiny scale the LSTM has lower perplexity than the Transformer (2.62 vs 3.01). Transformers
-  usually need more data and training before they pull ahead.
+- **The token models get rhythm almost exactly right** (onset position and duration OA of 0.98 to
+  0.99). The piano-roll model has no explicit bars or durations and reaches 0.76 to 0.88. This is
+  the main reason to prefer the REMI representation.
+- **The key constraint helps.** Without it, about 20% of the Transformer's and LSTM's notes fall
+  outside the best fitting scale. With `--key auto`, every note is in the key of the prompt and
+  the Transformer's key clarity rises above that of the real music, with no retraining.
+- **All models are still weak at long-range structure.** The real continuations reuse their 4 bar
+  motifs (repetition ratio 0.55). Generated ones never do (0.00). The Transformer also leaps more
+  than the real music (mean interval 5.3 semitones against 3.2). More data, longer context and
+  more training are the next things I would try.
+- At this tiny scale the LSTM has lower perplexity than the Transformer (2.62 against 3.01).
 
 <p align="center">
   <img src="docs/images/transformer_continuation.png" alt="Transformer continuation: 4 prompt bars (blue) and 12 generated bars (red)" width="100%"><br>
@@ -197,7 +205,7 @@ What the numbers show:
 
 <p align="center">
   <img src="docs/images/transformer_distributions.png" alt="Pitch-class, interval, duration and onset distributions: generated vs held-out" width="100%"><br>
-  <em>Pooled statistics of generated vs. real continuations. Rhythm is matched closely; intervals are too wide.</em>
+  <em>Pooled statistics of generated and real continuations, key-constrained. Rhythm is matched closely; intervals are too wide.</em>
 </p>
 
 <p align="center">

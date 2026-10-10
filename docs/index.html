@@ -105,9 +105,10 @@ is (after a bar line, inside a note, at which position) and returns the set of l
 <a href="https://github.com/edwin580/music-generator/blob/main/src/musegen/data/tokenizer.py">tokenizer.py</a>).
 The sampling loop is <code>generate_tokens</code> in
 <a href="https://github.com/edwin580/music-generator/blob/main/src/musegen/generation.py">generation.py</a>.
-While building this page I found a bug there: after a prompt, the grammar still allowed later
-positions in the prompt's last bar, so the model wrote notes into the prompt. In a test, 46 of 50
-continuations did. Now the sampler opens a new bar first, and a test checks it.</p>
+While building this page I found a bug there. If a
+prompt ended in a rest, the grammar still allowed positions later in its last bar, and the model
+filled them, writing notes into the prompt. With the 26 test prompts cut two beats early, all 52
+continuations did. Now the sampler opens a new bar first and none do. A test checks it.</p>
 
 <h2>Finding the key</h2>
 
