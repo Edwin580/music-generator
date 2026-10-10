@@ -1,37 +1,36 @@
-# musegen: neural music generation
+# musegen
+
+**Try it in your browser: [edwin580.github.io/music-generator](https://edwin580.github.io/music-generator/)**
+
+musegen is a small Transformer that continues melodies. Give it the first bars of a piece and it
+writes the rest, one token at a time. The page above runs the trained model in your browser with no
+install and no sign up. You pick a prompt, a key, a temperature and top-p, and hear the result. You
+can also step through the sampling to see what the model wanted and what the filters allowed.
+
+[![The demo page: a piano roll with a 4 bar prompt and the model's continuation in red](docs/images/demo.png)](https://edwin580.github.io/music-generator/)
+
+I started this in COGS 319 (Fall 2024) as an LSTM in a Colab notebook. I later rebuilt it as a
+tested PyTorch package. It has three models (a Transformer, a token LSTM and the notebook's piano
+roll LSTM with its bugs fixed), REMI token encoding, sampling that is constrained by a grammar and
+optionally by a key, and an evaluation that compares generated continuations with the real ones.
 
 [![CI](https://github.com/edwin580/music-generator/actions/workflows/ci.yml/badge.svg)](https://github.com/edwin580/music-generator/actions/workflows/ci.yml)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/edwin580/music-generator/blob/main/notebooks/musegen_colab.ipynb)
-![Python](https://img.shields.io/badge/python-3.10%E2%80%933.12-blue)
-![PyTorch](https://img.shields.io/badge/PyTorch-2.x-ee4c2c)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-`musegen` learns melodies from MIDI files and writes new ones. It started as a
-COGS-319 (Fall 2024) Colab notebook: an Elman-style LSTM trained on piano rolls.
-It is now a tested PyTorch package with:
+## Run it locally
 
-- **Three models**: a decoder-only Transformer (rotary position embeddings, KV-cache
-  decoding), an LSTM language model, and the notebook's original piano-roll LSTM with its bugs fixed.
-- **Two representations**: REMI-style event tokens (`BAR / POS / VEL / PITCH / DUR`) and a
-  lossless onset+sustain piano roll.
-- **Music-aware sampling**: temperature, top-k and nucleus (top-p) sampling. A grammar mask
-  guarantees every generated sequence decodes to valid music. An optional key constraint
-  (`--key "A minor"`, or `auto` to detect the key of the prompt with the Krumhansl-Schmuckler algorithm)
-  keeps pitches in a scale.
-- **Robust MIDI processing**: quantization against the file's own beat grid (tempo-aware),
-  skyline melody extraction, drum-track filtering, and repair of malformed files such as
-  the one that crashed the notebook ("Could not decode key with 16 sharps").
-- **Honest evaluation**: train/validation/test splits made per file (no overlapping windows
-  leaking across splits), held-out perplexity, and musical statistics of generated continuations
-  compared with the real continuations (scale consistency, key clarity, interval and rhythm
-  distributions, motif repetition, and so on), with plots.
-- **Tooling**: a `musegen` command-line tool, YAML presets with `--set key=value` overrides,
-  checkpoints, piano-roll and distribution plots, WAV rendering (FluidSynth or a built-in
-  piano-like synthesizer), 66 tests, and GitHub Actions CI.
+The demo is static files in [`docs/`](docs). Serve the folder with any web server:
 
----
+```bash
+git clone https://github.com/edwin580/music-generator.git && cd music-generator
+python -m http.server --directory docs 8000     # then open http://localhost:8000
+```
 
-## Quickstart
+(Opening `index.html` straight from disk does not work, because browsers block module workers on
+`file://` URLs.)
+
+To train, generate and evaluate with the Python package (Python 3.10 or newer):
 
 ```bash
 git clone https://github.com/edwin580/music-generator.git && cd music-generator
@@ -58,9 +57,12 @@ musegen evaluate -m runs/transformer/best.pt --num-samples 32
 # utilities
 musegen analyze some_song.mid --plot output/analysis.png   # key, statistics, piano roll
 musegen render output/song.mid                              # MIDI -> WAV
+
+# 5. export a Transformer and its held-out prompts for the browser demo
+musegen export-web -m runs/transformer/best.pt --out docs/model
 ```
 
-To confirm an installation end to end in about 10 seconds on a CPU:
+To check an installation in about 10 seconds on a CPU:
 `musegen synth-data && musegen train -c smoke`.
 To train on a Colab GPU, use the [notebook](notebooks/musegen_colab.ipynb).
 
@@ -123,6 +125,24 @@ a continuation, and compares it with the piece's real continuation:
   entropy, empty bars;
 - **distribution similarity** (Yang & Lerch, 2020): overlap area and Jensen-Shannon divergence
   between generated and real histograms of pitch class, melodic interval, duration and onset position.
+
+### The browser demo
+
+The page in [`docs/`](docs) is plain HTML, CSS and JavaScript modules with no dependencies and no
+build step. `musegen export-web` writes the Transformer's weights as one float16 file
+(`docs/model/model.bin`, 1.6 MB) with a JSON manifest, plus the held-out test pieces as prompts.
+[`docs/js/model.js`](docs/js/model.js) reimplements the forward pass (pre-LayerNorm blocks, rotary
+embeddings, GELU, a KV cache) and runs it in a Web Worker. In Node it takes about 1.5 ms per token.
+The tokenizer, grammar, sampling filter, key finding and metrics are ported too.
+
+[`tests/test_web_parity.py`](tests/test_web_parity.py) runs the JavaScript under Node and checks it
+against the Python package: logits from the same weights (with and without the sliding cache),
+token encodings and grammar masks along random walks, filtered probabilities, key correlations and
+metrics. It is skipped if Node is not installed.
+
+Every number on the page is computed in the browser from the melody on screen. The page design
+follows Bret Victor's explorable explanations: the inputs are numbers inside a sentence that you
+drag, as in his Tangle library, and the figures below them redraw.
 
 ## Results
 
@@ -217,7 +237,7 @@ src/musegen/
   configs/             transformer / lstm / pianoroll_lstm / smoke presets
   theory.py            notes, keys, scales, Krumhansl-Schmuckler key finding
   data/
-    midi_io.py         robust loading, tempo-aware quantization, skyline, MIDI writing
+    midi_io.py         loading with repair, tempo-aware quantization, skyline, MIDI writing
     tokenizer.py       REMI tokenizer + GrammarState (constrained decoding)
     pianoroll.py       lossless onset/sustain piano roll
     dataset.py         corpus cache, per-file splits, windowed datasets, augmentation
@@ -228,8 +248,10 @@ src/musegen/
   evaluation/          musical metrics, set comparisons, reports
   visualization.py     piano rolls, training curves, distribution plots, key profiles
   audio.py             FluidSynth or built-in synthesis -> WAV
+  web_export.py        weights + prompts for the browser demo
   cli.py               `musegen` command-line tool
-tests/                 66 tests: unit, property-style, end-to-end
+docs/                  the browser demo (GitHub Pages): index.html, style.css, js/, model/
+tests/                 84 tests: unit, property-style, end-to-end, JavaScript parity
 notebooks/             Colab notebook
 legacy/                the original COGS-319 notebook code
 ```

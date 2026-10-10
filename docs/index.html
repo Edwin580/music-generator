@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>musegen: a melody model you can play with</title>
+<meta name="description" content="A small Transformer that continues melodies, running in the browser. Change the prompt, key, temperature and top-p and hear the result. By Edwin Cortazo.">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='9' width='5' height='3' fill='%23222'/%3E%3Crect x='7' y='5' width='4' height='3' fill='%23b3261e'/%3E%3Crect x='11' y='2' width='4' height='3' fill='%23b3261e'/%3E%3C/svg%3E">
+<script type="module" src="js/app.js"></script>
+</head>
+<body>
+<main>
+
+<header>
+  <h1>musegen</h1>
+  <p class="byline">Edwin Cortazo. <a href="https://github.com/edwin580/music-generator">Source on GitHub</a>.</p>
+</header>
+
+<p class="lede">This is a small Transformer that continues melodies. It runs in this page: the
+<span data-fact="params">810,240</span> weights load into your browser and every note below is sampled
+here, in JavaScript. Drag the red numbers sideways (or tap them) to change the input.</p>
+
+<noscript><p class="note">The demo needs JavaScript. The <a href="https://github.com/edwin580/music-generator">README</a> describes the same project without it.</p></noscript>
+
+<figure id="instrument">
+  <p class="controls-text">Take the first <span id="a-prompt">4 bars</span> of held-out piece
+  <span id="a-piece">1</span> and let the model write <span id="a-bars">12 more bars</span> in
+  <span id="a-key">the prompt's key</span>. Sample at temperature <span id="a-temp">0.90</span>
+  from the top <span id="a-topp">95%</span> of the probability.</p>
+  <div class="roll-wrap"><svg id="roll" role="img" aria-label="Piano roll of the prompt and the model's continuation"></svg></div>
+  <p class="buttons">
+    <button id="play" type="button">Play</button>
+    <button id="new-take" type="button">Another take</button>
+    <button id="toggle-truth" type="button">Hide the real continuation</button>
+    <span id="status" class="muted" aria-live="polite">loading the model…</span>
+  </p>
+  <figcaption id="roll-caption"></figcaption>
+  <table id="stats" class="numbers">
+    <thead><tr><th></th><th scope="col">Model</th><th scope="col">Real</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</figure>
+
+<p>I started this in COGS 319 (Fall 2024) as an LSTM in a Colab notebook. Later I rebuilt it as a
+tested PyTorch package with three models, a better encoding of music and an honest evaluation.
+The model on this page is the package's Transformer: <span data-fact="layers">4</span> layers,
+<span data-fact="dmodel">128</span> dimensions, trained for <span data-fact="epochs">25</span> epochs
+on a CPU. Its perplexity on held-out pieces is <span data-fact="ppl">3.00</span>.</p>
+
+<p>Be clear about the data. The training set is 256 short pieces that the package composes itself
+(<a href="https://github.com/edwin580/music-generator/blob/main/src/musegen/data/sources.py">sources.py</a>):
+each has a key, a chord progression and a repeated phrase. That keeps the demo free of copyrighted
+music, and it means the model writes in that simple style. The
+<span data-fact="pieces">26</span> prompts above are the test split, which the model never saw.</p>
+
+<h2>What the model reads</h2>
+
+<p>The model never sees audio or a piano roll. Each melody becomes a list of events, following REMI
+(Huang and Yang, 2020). <code>BAR</code> starts a bar. <code>POS_n</code> puts the next note on the
+nth sixteenth of the bar. <code>VEL</code>, <code>PITCH</code> and <code>DUR</code> then give its
+loudness, pitch and length. These are the tokens of the melody above; the prompt is grey. Click a
+red token to see how the model picked it.</p>
+
+<div id="tokens" class="tokens" aria-label="REMI tokens of the melody"></div>
+
+<p>This turns composing into choosing the next token out of <span data-fact="vocab">148</span>, the
+same task a text model solves. It also means the model can write nonsense: a pitch with no length,
+or a position earlier than the last one, which does not decode into music. The encoding lives in
+<a href="https://github.com/edwin580/music-generator/blob/main/src/musegen/data/tokenizer.py">tokenizer.py</a>.</p>
+
+<h2>Picking one token</h2>
+
+<p>At each step the model gives a probability for every token. Before drawing one, I filter that
+distribution three times. A grammar keeps only the tokens that can legally come next, so every
+sequence decodes. A key constraint keeps only pitches in the scale. Top-p sampling keeps the
+smallest set of likely tokens whose probabilities add up to p (Holtzman et al., 2020). Below is the
+full distribution at one step of the melody above. Faint bars are tokens the grammar rules out;
+grey ones are pitches outside the key.</p>
+
+<figure id="stepper">
+  <div class="step-head">
+    <button id="step-prev" type="button" aria-label="Previous step">Back</button>
+    <input id="step-range" type="range" min="0" max="1" value="0" aria-label="Step">
+    <button id="step-next" type="button" aria-label="Next step">Next</button>
+    <button id="step-pitch" type="button">Next pitch</button>
+  </div>
+  <p class="step-label"><span id="step-label"></span>. Context: <span id="step-context" class="mono"></span></p>
+  <div class="roll-wrap"><svg id="vocab" role="img" aria-label="Model probability for every token at this step"></svg></div>
+  <p id="step-text"></p>
+  <table id="candidates" class="numbers">
+    <thead><tr><th scope="col">Token</th><th scope="col">Model</th><th scope="col">After filters</th><th scope="col"></th></tr></thead>
+    <tbody></tbody>
+  </table>
+</figure>
+
+<p><span id="illegal"></span> Raise the temperature and watch that worst step grow. A strange draw,
+like a note 23 sixteenths long, confuses the model, and it then asks for a second length in a row or
+a position it has already passed. The mask is what keeps those steps from breaking the melody.</p>
+
+<p>The mask is cheap because the grammar is regular. A small state machine tracks where the sequence
+is (after a bar line, inside a note, at which position) and returns the set of legal next tokens
+(<code>GrammarState</code> in
+<a href="https://github.com/edwin580/music-generator/blob/main/src/musegen/data/tokenizer.py">tokenizer.py</a>).
+The sampling loop is <code>generate_tokens</code> in
+<a href="https://github.com/edwin580/music-generator/blob/main/src/musegen/generation.py">generation.py</a>.
+While building this page I found a bug there: after a prompt, the grammar still allowed later
+positions in the prompt's last bar, so the model wrote notes into the prompt. In a test, 46 of 50
+continuations did. Now the sampler opens a new bar first, and a test checks it.</p>
+
+<h2>Finding the key</h2>
+
+<p>The constraint needs a key, and the prompt does not say what it is. I estimate it with the
+Krumhansl-Schmuckler algorithm. Add up how long each of the 12 pitch classes sounds. Then correlate
+those 12 numbers with the probe tone profiles that Krumhansl and Kessler (1982) measured by asking
+listeners how well each note fits a key, rotated to all 24 major and minor keys. The best
+correlation wins. The code is <code>estimate_key</code> in
+<a href="https://github.com/edwin580/music-generator/blob/main/src/musegen/theory.py">theory.py</a>.</p>
+
+<figure>
+  <div class="roll-wrap"><svg id="keychart" role="img" aria-label="Correlation of the prompt with all 24 keys"></svg></div>
+  <figcaption id="key-text"></figcaption>
+</figure>
+
+<h2>Does the constraint help?</h2>
+
+<p>This runs the model on all <span data-fact="pieces">26</span> held-out prompts twice, once
+constrained to the key of the prompt and once free, and compares both with what the pieces
+really do next. Each prompt gets the same seed both times. <span id="exp-settings"></span></p>
+
+<p class="buttons"><button id="run-exp" type="button">Run the comparison</button>
+<span id="exp-progress" class="muted" aria-live="polite"></span></p>
+
+<table id="experiment" class="numbers wide" hidden>
+  <thead><tr><th></th><th scope="col">Notes in scale</th><th scope="col">Key clarity</th><th scope="col">Mean leap</th><th scope="col">Repeated figures</th></tr></thead>
+  <tbody></tbody>
+</table>
+<p id="exp-result"></p>
+
+<p>"Notes in scale" is the share of notes inside whichever major or minor scale fits that melody
+best. "Key clarity" is its best correlation from the chart above. "Repeated figures" counts 4-note
+patterns of intervals and lengths that occur more than once, so a motif restated higher still
+counts. These follow the set comparisons of Yang and Lerch (2020) and are computed by
+<a href="https://github.com/edwin580/music-generator/blob/main/src/musegen/evaluation/metrics.py">metrics.py</a>
+in the package and its port in this page.</p>
+
+<p>The constraint fixes the wrong notes without retraining. It does nothing for structure. The real
+pieces restate their phrases and the model almost never does. That is the clearest gap, and the
+one I would work on next, with more data and a longer training context.</p>
+
+<h2>The rest of the pipeline</h2>
+
+<p><strong>Reading MIDI.</strong> The notebook called <code>get_piano_roll(fs=4)</code> to get
+"4 steps per beat", but <code>fs</code> is frames per second, so the grid changed with the tempo.
+The package quantizes against each file's own beat grid, keeps the top note at each onset as the
+melody, ignores drum tracks and repairs files with broken key signatures
+(<a href="https://github.com/edwin580/music-generator/blob/main/src/musegen/data/midi_io.py">midi_io.py</a>).</p>
+
+<p><strong>The model.</strong> A decoder-only Transformer with pre-LayerNorm blocks, rotary position
+embeddings (Su et al., 2021) and a key/value cache, so each new token costs one step instead of a
+pass over the whole context
+(<a href="https://github.com/edwin580/music-generator/blob/main/src/musegen/models/transformer.py">transformer.py</a>).
+For this page I exported the weights as float16 and rewrote the forward pass in plain JavaScript
+(<a href="https://github.com/edwin580/music-generator/blob/main/docs/js/model.js">model.js</a>).
+A test runs both on the same tokens and checks that the logits agree
+(<a href="https://github.com/edwin580/music-generator/blob/main/tests/test_web_parity.py">test_web_parity.py</a>).
+The same test covers the tokenizer, grammar, sampling filter, key finding and metrics.</p>
+
+<p><strong>Evaluation.</strong> The notebook shuffled overlapping windows and then split them, so
+validation windows shared 47 of 48 frames with training ones. The package splits by file. The
+README has the full benchmark against two LSTM baselines and a list of the
+fifteen problems I fixed from the original notebook.</p>
+
+<h2>Run it yourself</h2>
+
+<pre><code>git clone https://github.com/edwin580/music-generator.git
+cd music-generator
+pip install -e ".[dev]"
+musegen synth-data --dest data/synthetic --n 256
+musegen train -c transformer --midi-dir data/synthetic
+musegen generate -m runs/transformer/best.pt -o song.mid --key auto --wav</code></pre>
+
+<p>Or train on a free GPU with the
+<a href="https://colab.research.google.com/github/edwin580/music-generator/blob/main/notebooks/musegen_colab.ipynb">Colab notebook</a>.</p>
+
+<h2>References</h2>
+
+<ol class="refs">
+  <li>Holtzman, A., Buys, J., Du, L., Forbes, M., and Choi, Y. (2020). The curious case of neural text degeneration. <em>ICLR</em>.</li>
+  <li>Huang, Y.-S., and Yang, Y.-H. (2020). Pop Music Transformer: Beat-based modeling and generation of expressive pop piano compositions. <em>ACM Multimedia</em>.</li>
+  <li>Krumhansl, C. L., and Kessler, E. J. (1982). Tracing the dynamic changes in perceived tonal organization in a spatial representation of musical keys. <em>Psychological Review</em>, 89(4), 334-368.</li>
+  <li>Su, J., et al. (2021). RoFormer: Enhanced Transformer with rotary position embedding. <em>arXiv:2104.09864</em>.</li>
+  <li>Yang, L.-C., and Lerch, A. (2020). On the evaluation of generative models in music. <em>Neural Computing and Applications</em>, 32, 4773-4784.</li>
+  <li>Victor, B. (2011). <a href="https://worrydream.com/ExplorableExplanations/">Explorable Explanations</a>. The draggable numbers on this page follow his Tangle library.</li>
+</ol>
+
+<footer>
+  <p>Edwin Cortazo. MIT license. <a href="https://github.com/edwin580/music-generator">github.com/edwin580/music-generator</a></p>
+</footer>
+</main>
+</body>
+</html>
