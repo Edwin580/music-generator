@@ -61,6 +61,22 @@ def test_generate_respects_length_key_and_monophony(arch, with_prompt):
     assert len(starts) == len(set(starts))
 
 
+@pytest.mark.parametrize("seed", range(10))
+def test_continuation_leaves_the_prompt_untouched(seed):
+    # The prompt's last note is early in bar 2, so the grammar would still allow notes later
+    # in that bar. Generated notes must start on the next bar line instead.
+    cfg = ExperimentConfig.from_dict({"model": {"d_model": 32, "n_layers": 1, "n_heads": 2}})
+    tok = build_tokenizer(cfg.data)
+    torch.manual_seed(0)
+    model = build_model(cfg, tok)
+    prompt = Score([Note(0, 62, 4, 72), Note(4, 65, 4, 72), Note(16, 69, 2, 72)], bars=2)
+    gen = dataclasses.replace(GenerationConfig(), bars=2)
+    result = generate(model, tok, gen, prompt, seed=seed)
+    in_prompt = [(n.start, n.pitch, n.duration) for n in result.score.notes if n.start < 32]
+    assert in_prompt == [(0, 62, 4), (4, 65, 4), (16, 69, 2)]
+    assert tok.count_bars(result.tokens) <= 4
+
+
 def test_generation_is_reproducible_with_seed():
     cfg = ExperimentConfig.from_dict({"model": {"d_model": 32, "n_layers": 1, "n_heads": 2}})
     tok = build_tokenizer(cfg.data)

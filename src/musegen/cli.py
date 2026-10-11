@@ -9,6 +9,7 @@ generate    sample new music (optionally continuing a MIDI prompt)
 evaluate    held-out likelihood + musical statistics + figures
 analyze     key, statistics and piano roll for any MIDI file
 render      MIDI -> WAV
+export-web  model weights + held-out prompts for the in-browser demo in docs/
 """
 
 from __future__ import annotations
@@ -163,6 +164,18 @@ def cmd_render(args) -> int:
     return 0
 
 
+def cmd_export_web(args) -> int:
+    from .web_export import export_model, export_prompts
+
+    out = Path(args.out)
+    manifest = export_model(args.checkpoint, out)
+    prompts = export_prompts(args.checkpoint, out / "prompts.json", args.split, args.midi_dir)
+    size = (out / "model.bin").stat().st_size / 1e6
+    print(f"Wrote {out}/model.bin ({size:.1f} MB, {manifest['training']['n_params']:,} "
+          f"parameters) and {len(prompts['pieces'])} {args.split} prompts")
+    return 0
+
+
 # -------------------------------------------------------------------- parser
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="musegen", description=__doc__,
@@ -235,6 +248,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--sample-rate", type=int, default=44100)
     p.add_argument("--soundfont")
     p.set_defaults(func=cmd_render)
+
+    p = sub.add_parser("export-web", help="export a transformer for the browser demo")
+    p.add_argument("--checkpoint", "-m", required=True)
+    p.add_argument("--out", default="docs/model")
+    p.add_argument("--split", default="test", choices=["train", "val", "test"])
+    p.add_argument("--midi-dir", help="corpus folder, if it moved since training")
+    p.set_defaults(func=cmd_export_web)
     return parser
 
 

@@ -1,37 +1,36 @@
-# musegen: neural music generation
+# musegen
+
+**Try it in your browser: [edwin580.github.io/music-generator](https://edwin580.github.io/music-generator/)**
+
+musegen is a small Transformer that continues melodies. Give it the first bars of a piece and it
+writes the rest, one token at a time. The page above runs the trained model in your browser with no
+install and no sign up. You pick a prompt, a key, a temperature and top-p, and hear the result. You
+can also step through the sampling to see what the model wanted and what the filters allowed.
+
+[![The demo page: a piano roll with a 4 bar prompt and the model's continuation in red](docs/images/demo.png)](https://edwin580.github.io/music-generator/)
+
+I started this in COGS 319 (Fall 2024) as an LSTM in a Colab notebook. I later rebuilt it as a
+tested PyTorch package. It has three models (a Transformer, a token LSTM and the notebook's piano
+roll LSTM with its bugs fixed), REMI token encoding, sampling that is constrained by a grammar and
+optionally by a key, and an evaluation that compares generated continuations with the real ones.
 
 [![CI](https://github.com/edwin580/music-generator/actions/workflows/ci.yml/badge.svg)](https://github.com/edwin580/music-generator/actions/workflows/ci.yml)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/edwin580/music-generator/blob/main/notebooks/musegen_colab.ipynb)
-![Python](https://img.shields.io/badge/python-3.10%E2%80%933.12-blue)
-![PyTorch](https://img.shields.io/badge/PyTorch-2.x-ee4c2c)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-`musegen` learns melodies from MIDI files and writes new ones. It started as a
-COGS-319 (Fall 2024) Colab notebook: an Elman-style LSTM trained on piano rolls.
-It is now a tested PyTorch package with:
+## Run it locally
 
-- **Three models**: a decoder-only Transformer (rotary position embeddings, KV-cache
-  decoding), an LSTM language model, and the notebook's original piano-roll LSTM with its bugs fixed.
-- **Two representations**: REMI-style event tokens (`BAR / POS / VEL / PITCH / DUR`) and a
-  lossless onset+sustain piano roll.
-- **Music-aware sampling**: temperature, top-k and nucleus (top-p) sampling. A grammar mask
-  guarantees every generated sequence decodes to valid music. An optional key constraint
-  (`--key "A minor"`, or `auto` to detect the key of the prompt with the Krumhansl-Schmuckler algorithm)
-  keeps pitches in a scale.
-- **Robust MIDI processing**: quantization against the file's own beat grid (tempo-aware),
-  skyline melody extraction, drum-track filtering, and repair of malformed files such as
-  the one that crashed the notebook ("Could not decode key with 16 sharps").
-- **Honest evaluation**: train/validation/test splits made per file (no overlapping windows
-  leaking across splits), held-out perplexity, and musical statistics of generated continuations
-  compared with the real continuations (scale consistency, key clarity, interval and rhythm
-  distributions, motif repetition, and so on), with plots.
-- **Tooling**: a `musegen` command-line tool, YAML presets with `--set key=value` overrides,
-  checkpoints, piano-roll and distribution plots, WAV rendering (FluidSynth or a built-in
-  piano-like synthesizer), 66 tests, and GitHub Actions CI.
+The demo is static files in [`docs/`](docs). Serve the folder with any web server:
 
----
+```bash
+git clone https://github.com/edwin580/music-generator.git && cd music-generator
+python -m http.server --directory docs 8000     # then open http://localhost:8000
+```
 
-## Quickstart
+(Opening `index.html` straight from disk does not work, because browsers block module workers on
+`file://` URLs.)
+
+To train, generate and evaluate with the Python package (Python 3.10 or newer):
 
 ```bash
 git clone https://github.com/edwin580/music-generator.git && cd music-generator
@@ -58,9 +57,12 @@ musegen evaluate -m runs/transformer/best.pt --num-samples 32
 # utilities
 musegen analyze some_song.mid --plot output/analysis.png   # key, statistics, piano roll
 musegen render output/song.mid                              # MIDI -> WAV
+
+# 5. export a Transformer and its held-out prompts for the browser demo
+musegen export-web -m runs/transformer/best.pt --out docs/model
 ```
 
-To confirm an installation end to end in about 10 seconds on a CPU:
+To check an installation in about 10 seconds on a CPU:
 `musegen synth-data && musegen train -c smoke`.
 To train on a Colab GPU, use the [notebook](notebooks/musegen_colab.ipynb).
 
@@ -124,51 +126,77 @@ a continuation, and compares it with the piece's real continuation:
 - **distribution similarity** (Yang & Lerch, 2020): overlap area and Jensen-Shannon divergence
   between generated and real histograms of pitch class, melodic interval, duration and onset position.
 
+### The browser demo
+
+The page in [`docs/`](docs) is plain HTML, CSS and JavaScript modules with no dependencies and no
+build step. `musegen export-web` writes the Transformer's weights as one float16 file
+(`docs/model/model.bin`, 1.6 MB) with a JSON manifest, plus the held-out test pieces as prompts.
+[`docs/js/model.js`](docs/js/model.js) reimplements the forward pass (pre-LayerNorm blocks, rotary
+embeddings, GELU, a KV cache) and runs it in a Web Worker. In Node it takes about 1.5 ms per token.
+The tokenizer, grammar, sampling filter, key finding and metrics are ported too.
+
+[`tests/test_web_parity.py`](tests/test_web_parity.py) runs the JavaScript under Node and checks it
+against the Python package: logits from the same weights (with and without the sliding cache),
+token encodings and grammar masks along random walks, filtered probabilities, key correlations and
+metrics. It is skipped if Node is not installed.
+
+Every number on the page is computed in the browser from the melody on screen. The page design
+follows Bret Victor's explorable explanations: the inputs are numbers inside a sentence that you
+drag, as in his Tangle library, and the figures below them redraw.
+
 ## Results
 
-These numbers come from a short **CPU-only benchmark on the synthetic corpus**
-(`musegen synth-data --n 256`: 256 procedurally composed 16-bar pieces, split 204/26/26 by file).
-Each model trained for 25 epochs, a few minutes each. The runs had not converged, so treat this
-as a check that the pipeline works and a comparison of the models, not as final quality. On the
-real MIDIWorld set, or with a Colab GPU and more epochs, expect different numbers.
-Reproduce with:
+These numbers come from a short CPU benchmark on the synthetic corpus
+(`musegen synth-data --n 256`: 256 procedurally composed 16 bar pieces, split 204/26/26 by file).
+Each model trained for 25 epochs, a few minutes each. The runs had not converged, so read this
+as a check that the pipeline works and a comparison between the models, not as final quality. On
+real MIDI, or with a GPU and more epochs, expect different numbers. The Transformer in the browser
+demo is the one from this table. Reproduce with:
 
 ```bash
 musegen synth-data --dest data/synth256 --n 256 --seed 7
 musegen train -c transformer --midi-dir data/synth256 --output-dir runs/synth_transformer \
     --set model.d_model=128 model.n_layers=4 model.n_heads=4 data.seq_len=256 data.stride=128 train.epochs=25
+musegen train -c lstm --midi-dir data/synth256 --output-dir runs/synth_lstm \
+    --set model.d_model=256 train.epochs=25
+musegen train -c pianoroll_lstm --midi-dir data/synth256 --output-dir runs/synth_pianoroll \
+    --set train.epochs=25
 musegen evaluate -m runs/synth_transformer/best.pt --num-samples 32 --bars 12 --prompt-bars 4 [--key auto]
 ```
 
-Evaluation takes 32 samples (cycling through the 26 test pieces): each continues 4 bars of a held-out prompt for 12 bars.
+Evaluation takes 32 samples (cycling through the 26 test pieces). Each continues 4 bars of a
+held-out prompt for 12 bars and is compared with the piece's real next 12 bars.
 
 | model | params | held-out likelihood | scale consistency | key clarity | pitch-class OA | interval OA | rhythm (onset) OA |
 |---|---|---|---|---|---|---|---|
-| real continuations | – | – | 1.000 | 0.762 | – | – | – |
-| Transformer | 0.81 M | perplexity **3.01** | 0.793 | 0.614 | 0.93 | 0.72 | 0.97 |
-| Transformer + `--key auto` | | | **1.000** | **0.786** | 0.94 | 0.73 | 0.97 |
-| LSTM (tokens) | 1.09 M | perplexity **2.62** | 0.792 | 0.553 | 0.91 | 0.81 | 0.98 |
-| LSTM (tokens) + `--key auto` | | | **1.000** | 0.705 | 0.90 | 0.81 | 0.98 |
+| real continuations | | | 1.000 | 0.762 | | | |
+| Transformer | 0.81 M | perplexity **3.01** | 0.794 | 0.644 | 0.92 | 0.69 | 0.98 |
+| Transformer + `--key auto` | | | **1.000** | **0.799** | 0.92 | 0.75 | 0.99 |
+| LSTM (tokens) | 1.09 M | perplexity **2.62** | 0.783 | 0.568 | 0.92 | 0.83 | 0.98 |
+| LSTM (tokens) + `--key auto` | | | **1.000** | 0.737 | 0.90 | 0.80 | 0.98 |
 | piano-roll LSTM (notebook model, fixed) | 1.14 M | frame F1 0.67 | 0.841 | 0.708 | 0.90 | 0.80 | 0.76 |
 | piano-roll LSTM + `--key auto` | | | 0.999 | 0.774 | 0.93 | 0.76 | 0.80 |
 
 *OA = overlap area between the generated and real histograms (1.0 = identical distributions).*
 
+These were re-run after fixing a bug in `generate_tokens`: after a prompt, sampling resumed inside
+the prompt's last bar, so a prompt ending in a rest got notes written into it. On these prompts the
+last bar is usually full, so the token models' numbers moved only slightly; the piano-roll model is
+unaffected.
+
 What the numbers show:
 
-- **The token models get rhythm almost exactly right** (onset-position and duration OA of
-  0.97-0.99). The piano-roll model, with no explicit notion of bars or durations, reaches only 0.76-0.81.
-  This is the main reason to prefer the REMI representation.
-- **The key constraint helps.** Without it, about 20% of generated notes fall outside the
-  best-fitting scale. With `--key auto`, every note is in the key of the prompt and tonal clarity
-  rises to or above that of the real music, with no retraining.
-- **All models are still weak at long-range structure.** The real continuations reuse their
-  4-bar motifs (repetition ratio 0.55); generated ones essentially never do (≈0.00). The Transformer
-  also leaps more than the real music (mean interval 5.2 vs 3.3 semitones). More training, longer
-  context and larger models are the obvious next steps; this is the gap the Transformer's
-  attention should eventually close.
-- At this tiny scale the LSTM has lower perplexity than the Transformer (2.62 vs 3.01). Transformers
-  usually need more data and training before they pull ahead.
+- **The token models get rhythm almost exactly right** (onset position and duration OA of 0.98 to
+  0.99). The piano-roll model has no explicit bars or durations and reaches 0.76 to 0.88. This is
+  the main reason to prefer the REMI representation.
+- **The key constraint helps.** Without it, about 20% of the Transformer's and LSTM's notes fall
+  outside the best fitting scale. With `--key auto`, every note is in the key of the prompt and
+  the Transformer's key clarity rises above that of the real music, with no retraining.
+- **All models are still weak at long-range structure.** The real continuations reuse their 4 bar
+  motifs (repetition ratio 0.55). Generated ones never do (0.00). The Transformer also leaps more
+  than the real music (mean interval 5.3 semitones against 3.2). More data, longer context and
+  more training are the next things I would try.
+- At this tiny scale the LSTM has lower perplexity than the Transformer (2.62 against 3.01).
 
 <p align="center">
   <img src="docs/images/transformer_continuation.png" alt="Transformer continuation: 4 prompt bars (blue) and 12 generated bars (red)" width="100%"><br>
@@ -177,7 +205,7 @@ What the numbers show:
 
 <p align="center">
   <img src="docs/images/transformer_distributions.png" alt="Pitch-class, interval, duration and onset distributions: generated vs held-out" width="100%"><br>
-  <em>Pooled statistics of generated vs. real continuations. Rhythm is matched closely; intervals are too wide.</em>
+  <em>Pooled statistics of generated and real continuations, key-constrained. Rhythm is matched closely; intervals are too wide.</em>
 </p>
 
 <p align="center">
@@ -217,7 +245,7 @@ src/musegen/
   configs/             transformer / lstm / pianoroll_lstm / smoke presets
   theory.py            notes, keys, scales, Krumhansl-Schmuckler key finding
   data/
-    midi_io.py         robust loading, tempo-aware quantization, skyline, MIDI writing
+    midi_io.py         loading with repair, tempo-aware quantization, skyline, MIDI writing
     tokenizer.py       REMI tokenizer + GrammarState (constrained decoding)
     pianoroll.py       lossless onset/sustain piano roll
     dataset.py         corpus cache, per-file splits, windowed datasets, augmentation
@@ -228,8 +256,10 @@ src/musegen/
   evaluation/          musical metrics, set comparisons, reports
   visualization.py     piano rolls, training curves, distribution plots, key profiles
   audio.py             FluidSynth or built-in synthesis -> WAV
+  web_export.py        weights + prompts for the browser demo
   cli.py               `musegen` command-line tool
-tests/                 66 tests: unit, property-style, end-to-end
+docs/                  the browser demo (GitHub Pages): index.html, style.css, js/, model/
+tests/                 84 tests: unit, property-style, end-to-end, JavaScript parity
 notebooks/             Colab notebook
 legacy/                the original COGS-319 notebook code
 ```

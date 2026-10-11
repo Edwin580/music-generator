@@ -108,6 +108,11 @@ def generate_tokens(
     grammar = GrammarState(tokenizer, key=key, monophonic=monophonic).feed(tokens)
     target_bars = grammar.bars + n_bars
     types = tokenizer.token_types()
+    if grammar.bars and n_bars > 0:
+        # Open the first new bar ourselves. Otherwise the grammar still allows later
+        # positions in the prompt's last bar and the model writes notes into the prompt.
+        tokens.append(tokenizer.bar_id)
+        grammar.update(tokenizer.bar_id)
 
     context = tokens[-getattr(model, "max_len", len(tokens)) :]
     logits, state = model(torch.tensor([context], device=device))
