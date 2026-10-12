@@ -1,4 +1,4 @@
-// SVG figures. Colours come from CSS classes so light and dark mode both work.
+// SVG figures. Colours come from CSS classes in style.css.
 import { BAR, DUR, PITCH, POS, VEL } from "./remi.js";
 import { PITCH_CLASS_NAMES, pitchName } from "./theory.js";
 
