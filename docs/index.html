@@ -5,13 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>musegen: a melody model you can play with</title>
 <meta name="description" content="A small Transformer that continues melodies, running in the browser. Change the prompt, key, temperature and top-p and hear the result. By Edwin Cortazo.">
-<meta name="color-scheme" content="light dark">
 <link rel="stylesheet" href="style.css">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='9' width='5' height='3' fill='%23222'/%3E%3Crect x='7' y='5' width='4' height='3' fill='%23b3261e'/%3E%3Crect x='11' y='2' width='4' height='3' fill='%23b3261e'/%3E%3C/svg%3E">
 <script type="module" src="js/app.js"></script>
 </head>
 <body>
 <main>
+<div class="titlebar"><span>musegen &mdash; melody model</span><span class="controls" aria-hidden="true"><span>_</span><span>&#9633;</span><span>&times;</span></span></div>
+<nav class="menubar" aria-label="Links"><a href="https://github.com/edwin580/music-generator">Source</a><a href="https://github.com/edwin580/music-generator#readme">README</a><a href="https://colab.research.google.com/github/edwin580/music-generator/blob/main/notebooks/musegen_colab.ipynb">Colab</a></nav>
+<div class="doc">
 
 <header>
   <h1>musegen</h1>
@@ -196,8 +198,11 @@ musegen generate -m runs/transformer/best.pt -o song.mid --key auto --wav</code>
   <li>Victor, B. (2011). <a href="https://worrydream.com/ExplorableExplanations/">Explorable Explanations</a>. The draggable numbers on this page follow his Tangle library.</li>
 </ol>
 
+</div>
 <footer>
-  <p>Edwin Cortazo. MIT license. <a href="https://github.com/edwin580/music-generator">github.com/edwin580/music-generator</a></p>
+  <p>Edwin Cortazo</p>
+  <p>MIT license</p>
+  <p><a href="https://github.com/edwin580/music-generator">github.com/edwin580/music-generator</a></p>
 </footer>
 </main>
 </body>
