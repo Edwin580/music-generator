@@ -74,8 +74,11 @@ def loss_and_stats(model: nn.Module, x: torch.Tensor, y: torch.Tensor,
     }
 
 
-def summarise(total_loss: float, batches: int, stats: dict, kind: str) -> dict:
-    loss = total_loss / max(1, batches)
+def summarise(total_loss: float, stats: dict, kind: str) -> dict:
+    """Epoch metrics. ``total_loss`` is the sum of each batch's mean loss times its ``n``
+    (tokens that aren't padding, or piano-roll cells), so the result is the mean over
+    all of them: a short or mostly padded batch doesn't count as much as a full one."""
+    loss = total_loss / max(1, stats.get("n", 0))
     out = {"loss": loss}
     if kind == "tokens":
         out["perplexity"] = math.exp(min(loss, 50))
@@ -93,14 +96,14 @@ def summarise(total_loss: float, batches: int, stats: dict, kind: str) -> dict:
 def evaluate_loader(model: nn.Module, loader: DataLoader, device: torch.device,
                     pad_id: int = 0) -> dict:
     model.eval()
-    total, batches, stats = 0.0, 0, {}
+    total, stats = 0.0, {}
     for x, y in loader:
         loss, batch_stats = loss_and_stats(model, x.to(device), y.to(device), pad_id)
-        total += loss.item()
-        batches += 1
+        if batch_stats["n"]:
+            total += loss.item() * batch_stats["n"]
         for k, v in batch_stats.items():
             stats[k] = stats.get(k, 0) + v
-    return summarise(total, batches, stats, getattr(model, "kind", "tokens"))
+    return summarise(total, stats, getattr(model, "kind", "tokens"))
 
 
 class Trainer:
@@ -150,7 +153,7 @@ class Trainer:
     # --------------------------------------------------------------- epochs
     def _run_epoch(self, loader: DataLoader, train: bool) -> dict:
         self.model.train(train)
-        total_loss, batches, stats = 0.0, 0, {}
+        total_loss, stats = 0.0, {}
         limit = self.tc.max_steps_per_epoch if train else None
         for step, (x, y) in enumerate(loader):
             if limit and step >= limit:
@@ -173,11 +176,11 @@ class Trainer:
                 if self.global_step % self.tc.log_every == 0:
                     logger.info("step %d  loss %.4f  lr %.2e", self.global_step, loss.item(),
                                 self.scheduler.get_last_lr()[0])
-            total_loss += loss.item()
-            batches += 1
+            if batch_stats["n"]:
+                total_loss += loss.item() * batch_stats["n"]
             for k, v in batch_stats.items():
                 stats[k] = stats.get(k, 0) + v
-        return summarise(total_loss, batches, stats, self.kind)
+        return summarise(total_loss, stats, self.kind)
 
     @torch.no_grad()
     def evaluate(self, loader: DataLoader) -> dict:

@@ -65,3 +65,21 @@ def test_build_and_checkpoint_round_trip(arch, tmp_path):
     x = (torch.randint(1, tok.vocab_size, (1, 5)) if rep == "tokens"
          else torch.rand(1, 5, 2 * tok.n_pitches).round())
     assert torch.allclose(model(x)[0], loaded(x)[0])
+
+
+def test_held_out_loss_is_per_token_not_per_batch():
+    """A mostly padded batch must not weigh as much as a full one."""
+    from musegen.training.trainer import evaluate_loader, loss_and_stats
+
+    model = MusicTransformer(V, d_model=32, n_layers=1, n_heads=2, dropout=0.0, max_len=64)
+    full = torch.randint(1, V, (4, 21))
+    short = torch.randint(1, V, (1, 21))
+    short[:, 4:] = 0  # padding
+    batches = [(full[:, :-1], full[:, 1:]), (short[:, :-1], short[:, 1:])]
+    metrics = evaluate_loader(model, batches, torch.device("cpu"))
+
+    # The same tokens scored in one go.
+    x, y = (torch.cat([a, b]) for a, b in zip(*batches, strict=True))
+    loss, stats = loss_and_stats(model.eval(), x, y)
+    assert stats["n"] == 4 * 20 + 3
+    assert metrics["loss"] == pytest.approx(loss.item(), rel=1e-5)
