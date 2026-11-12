@@ -77,7 +77,7 @@ export function estimateKey(notes) {
 export function parseKey(text) {
   const m = /^\s*([A-Ga-g])([#b]?)\s*(major|minor)?\s*$/.exec(text);
   if (!m) throw new Error(`cannot parse key ${text}`);
-  const flats = { DB: 1, EB: 3, GB: 6, AB: 8, BB: 10, CB: 11, FB: 4 };
+  const flats = { DB: 1, EB: 3, GB: 6, AB: 8, BB: 10, CB: 11, FB: 4, "E#": 5, "B#": 0 };
   const name = (m[1] + m[2]).toUpperCase();
   const tonic = name in flats ? flats[name] : PITCH_CLASS_NAMES.indexOf(name);
   return new Key(tonic, m[3] === "minor" ? "minor" : "major");

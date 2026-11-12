@@ -24,6 +24,12 @@ def test_key_parse(text, tonic, mode):
     assert (key.tonic, key.mode) == (tonic, mode)
 
 
+def test_key_parse_accepts_white_key_sharps():
+    # These used to fail with "tuple.index(x): x not in tuple".
+    assert Key.parse("E#").tonic == 5
+    assert (Key.parse("B# minor").tonic, Key.parse("B# minor").mode) == (0, "minor")
+
+
 def test_key_parse_rejects_garbage():
     with pytest.raises(ValueError):
         Key.parse("H major")
